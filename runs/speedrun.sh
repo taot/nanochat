@@ -33,7 +33,7 @@ source .venv/bin/activate
 # 1) Make sure to first log in to wandb, e.g. run:
 #    `wandb login`
 # 2) Set the WANDB_RUN environment variable when running this script, e.g.:
-#    `WANDB_RUN=d26 bash speedrun.sh`
+#    `WANDB_RUN=d24 bash speedrun.sh`
 if [ -z "$WANDB_RUN" ]; then
     # by default use "dummy" : it's handled as a special case, skips logging to wandb
     WANDB_RUN=dummy
