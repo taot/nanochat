@@ -1,9 +1,11 @@
 import argparse
+import datetime
 import math
 import os
 import pathlib
 import sys
 from collections import defaultdict
+import time
 
 import pyarrow.parquet as pq
 
@@ -26,8 +28,9 @@ def bytes_to_human(nbytes: int) -> str:
 def ascii_histogram(
     hist: dict[int, int],
     bin_width: int,
-    max_bins: int = 60,
+    max_bins: int = 45,
     log_scale: bool = False,
+    unit: str = "chars",
 ) -> None:
     """
     Render a compact in-terminal histogram.
@@ -47,7 +50,7 @@ def ascii_histogram(
     bar_max_width = 50
 
     scale_label = "log-x" if log_scale else "linear"
-    print(f"Text length histogram (ASCII, bin width={bin_width} chars, x-scale={scale_label}):")
+    print(f"Text length histogram (ASCII, bin width={bin_width} {unit}, x-scale={scale_label}):")
     for s in starts:
         c = hist[s]
         bar_len = int((c / max_count) * bar_max_width) if max_count else 0
@@ -61,7 +64,7 @@ def ascii_histogram(
             print(f"{s}-{end} | {bar} {c}")
 
 
-def show_histogram_plot(hist: dict[int, int], bin_width: int, use_mpl: bool, log_scale: bool) -> None:
+def show_histogram_plot(hist: dict[int, int], bin_width: int, use_mpl: bool, log_scale: bool, unit: str = "chars") -> None:
     """
     Show a histogram diagram.
 
@@ -69,7 +72,7 @@ def show_histogram_plot(hist: dict[int, int], bin_width: int, use_mpl: bool, log
     Optional: matplotlib GUI window (best-effort; may not be visible here).
     """
     if not use_mpl:
-        ascii_histogram(hist, bin_width, log_scale=log_scale)
+        ascii_histogram(hist, bin_width, log_scale=log_scale, unit=unit)
         return
 
     # Best-effort GUI render.
@@ -88,7 +91,7 @@ def show_histogram_plot(hist: dict[int, int], bin_width: int, use_mpl: bool, log
         # Matplotlib log scale can't include x=0, so plot x positions as (bucket_start + 1).
         x_plot = [s + 1 for s in starts]
         ax.bar(x_plot, counts, width=max(1.0, bin_width * 0.95), align="edge")
-        ax.set_xlabel(f"Text length (chars, bucket_start+1), bin_width={bin_width}")
+        ax.set_xlabel(f"Text length ({unit}, bucket_start+1), bin_width={bin_width}")
         ax.set_ylabel("Count")
         if log_scale:
             ax.set_xscale("log")
@@ -107,7 +110,7 @@ def show_histogram_plot(hist: dict[int, int], bin_width: int, use_mpl: bool, log
         plt.show()
     except Exception as e:
         print(f"(matplotlib display failed: {type(e).__name__}) Falling back to ASCII.")
-        ascii_histogram(hist, bin_width, log_scale=log_scale)
+        ascii_histogram(hist, bin_width, log_scale=log_scale, unit=unit)
 
 
 def main() -> None:
@@ -152,10 +155,22 @@ def main() -> None:
         action="store_true",
         help="If set, suppress printing per-bin histogram counts (useful with --plot-out).",
     )
+    parser.add_argument(
+        "--tokens",
+        action="store_true",
+        help="Count tokens (using the nanochat tokenizer) instead of characters.",
+    )
     args = parser.parse_args()
 
     if args.bin_width <= 0:
         raise SystemExit("--bin-width must be > 0")
+
+    tokenizer = None
+    if args.tokens:
+        from nanochat.tokenizer import get_tokenizer
+        tokenizer = get_tokenizer()
+
+    unit = "tokens" if args.tokens else "chars"
 
     parquet_paths = list_parquet_files()
     if args.max_files != -1:
@@ -168,8 +183,10 @@ def main() -> None:
     # Histogram: key is the bin start (e.g. 0, 32, 64, ...), value is count.
     hist = defaultdict(int)
     hist_samples = 0
+    max_len = 0
 
     for filepath in parquet_paths:
+        print(f"{datetime.datetime.now()}: Processing {filepath}")
         total_size_bytes += os.path.getsize(filepath)
 
         pf = pq.ParquetFile(filepath)
@@ -184,6 +201,8 @@ def main() -> None:
                 # For this dataset, `t` is expected to be a string, but be defensive.
                 if t is None:
                     l = 0
+                elif tokenizer is not None:
+                    l = len(tokenizer.encode(t if isinstance(t, str) else str(t)))
                 else:
                     try:
                         l = len(t)
@@ -192,6 +211,8 @@ def main() -> None:
                 bucket_start = (l // args.bin_width) * args.bin_width
                 hist[bucket_start] += 1
                 hist_samples += 1
+                if l > max_len:
+                    max_len = l
 
     # Summary
     total_size_gb = total_size_bytes / (1024**3)
@@ -200,6 +221,7 @@ def main() -> None:
     print(f"Total size (GB): {total_size_gb:.6f} GB")
     print(f"Total size (human): {bytes_to_human(total_size_bytes)}")
     print(f"Total rows: {total_rows}")
+    print(f"Max text length ({unit}): {max_len}")
 
     if hist_samples != total_rows:
         print(f"Warning: histogram samples ({hist_samples}) != total rows ({total_rows})")
@@ -210,11 +232,11 @@ def main() -> None:
         args.plot = True
 
     if args.plot:
-        show_histogram_plot(hist, args.bin_width, use_mpl=args.mpl, log_scale=args.log_scale)
+        show_histogram_plot(hist, args.bin_width, use_mpl=args.mpl, log_scale=args.log_scale, unit=unit)
 
     # Histogram (text)
     if not args.hide_buckets and not args.plot:
-        print(f"Text length histogram (bin width={args.bin_width} chars):")
+        print(f"Text length histogram (bin width={args.bin_width} {unit}):")
         for start in sorted(hist.keys()):
             end = start + args.bin_width - 1
             count = hist[start]
