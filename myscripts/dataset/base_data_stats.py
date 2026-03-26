@@ -179,6 +179,8 @@ def main() -> None:
     num_parquet_files = len(parquet_paths)
     total_size_bytes = 0
     total_rows = 0
+    total_chars = 0
+    total_tokens = 0
 
     # Histogram: key is the bin start (e.g. 0, 32, 64, ...), value is count.
     hist = defaultdict(int)
@@ -199,15 +201,18 @@ def main() -> None:
             texts = rg.column("text").to_pylist()
             for t in texts:
                 # For this dataset, `t` is expected to be a string, but be defensive.
-                if t is None:
-                    l = 0
-                elif tokenizer is not None:
-                    l = len(tokenizer.encode(t if isinstance(t, str) else str(t)))
+                s = "" if t is None else (t if isinstance(t, str) else str(t))
+                try:
+                    char_len = len(t) if t is not None else 0
+                except TypeError:
+                    char_len = len(str(t))
+                total_chars += char_len
+                if tokenizer is not None:
+                    tok_len = len(tokenizer.encode(s))
+                    total_tokens += tok_len
+                    l = tok_len
                 else:
-                    try:
-                        l = len(t)
-                    except TypeError:
-                        l = len(str(t))
+                    l = char_len
                 bucket_start = (l // args.bin_width) * args.bin_width
                 hist[bucket_start] += 1
                 hist_samples += 1
@@ -221,6 +226,9 @@ def main() -> None:
     print(f"Total size (GB): {total_size_gb:.6f} GB")
     print(f"Total size (human): {bytes_to_human(total_size_bytes)}")
     print(f"Total rows: {total_rows}")
+    print(f"Total characters: {total_chars}")
+    if args.tokens:
+        print(f"Total tokens: {total_tokens}")
     print(f"Max text length ({unit}): {max_len}")
 
     if hist_samples != total_rows:
