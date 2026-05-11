@@ -5,10 +5,10 @@ This script reproduces a small, practical subset of:
 https://transformer-circuits.pub/2026/emotions/index.html
 
 Example:
-python -m myscripts.emotion_probes extract --source sft --train-per-emotion 40 --test-per-emotion 20
-python -m myscripts.emotion_probes eval-probe
-python -m myscripts.emotion_probes logit-lens
-python -m myscripts.emotion_probes steer --emotion happy --strength 2.0
+python -m interp.emotion.emotion_probes extract --source sft --train-per-emotion 40 --test-per-emotion 20
+python -m interp.emotion.emotion_probes eval-probe
+python -m interp.emotion.emotion_probes logit-lens
+python -m interp.emotion.emotion_probes steer --emotion happy --strength 2.0
 """
 
 import argparse
