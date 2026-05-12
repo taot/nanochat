@@ -35,6 +35,7 @@ uv run python -m interp.emotion.emotion_probes extract \
   --step 483 \
   --device-type cpu \
   --emotions happy sad \
+  --seed 42 \
   --train-per-emotion 1 \
   --test-per-emotion 1 \
   --out-dir out/emotion_probes_smoke
@@ -76,6 +77,7 @@ uv run python -m interp.emotion.emotion_probes extract \
   --model-tag d24 \
   --step 483 \
   --emotions happy sad angry calm afraid desperate proud loving \
+  --seed 42 \
   --train-per-emotion 40 \
   --test-per-emotion 20
 ```
