@@ -73,6 +73,7 @@ def parse_args():
     steer.add_argument("--assistant-prefix", type=str, default="He feels")
     steer.add_argument("--targets", nargs="+", default=DEFAULT_EMOTIONS)
     steer.add_argument("--positions", choices=["all", "last"], default="all")
+    steer.add_argument("--top-k", type=int, default=10)
 
     return parser.parse_args()
 
@@ -308,12 +309,23 @@ def next_token_logprobs(model, tokenizer, prompt_ids, targets, layer_idx=None, v
     logprobs = F.log_softmax(logits.float(), dim=-1)[0]
     rows = []
     for target in targets:
-        ids = tokenizer.encode(" " + target)
+        ids = tokenizer.encode(" " + target)        # TODO: 这里试验不加空格
         if not ids:
             continue
         token_id = ids[0]
         rows.append((target, token_label(tokenizer, token_id), logprobs[token_id].item()))
     return rows
+
+
+@torch.inference_mode()
+def top_next_tokens(model, tokenizer, prompt_ids, k, layer_idx=None, vector=None, strength=0.0, positions="all"):
+    input_ids = torch.tensor([prompt_ids], dtype=torch.long, device=model.get_device())
+    ctx = steer_layer(model, layer_idx, vector, strength, positions) if vector is not None else nullcontext()
+    with ctx:
+        logits = model(input_ids)[:, -1, :]
+    logprobs = F.log_softmax(logits.float(), dim=-1)[0]
+    vals, ids = torch.topk(logprobs, k)
+    return [(token_label(tokenizer, int(i)), v.item()) for v, i in zip(vals, ids)]
 
 
 def steer(args):
@@ -341,9 +353,22 @@ def steer(args):
     for target, tok, lp in steered:
         _, base_lp = by_target[target]
         rows.append([target, tok, base_lp, lp, lp - base_lp])
+    base_top = top_next_tokens(model, tokenizer, prompt_ids, args.top_k)
+    steered_top = top_next_tokens(
+        model, tokenizer, prompt_ids, args.top_k,
+        layer_idx=layer_idx, vector=vector, strength=args.strength, positions=args.positions,
+    )
+
     print(f"prompt: {args.prompt!r}")
     print(f"assistant_prefix: {args.assistant_prefix!r}")
     print(f"steering: emotion={args.emotion}, layer={layer_idx}, strength={args.strength}, positions={args.positions}")
+    print("\ntop next tokens (baseline vs steered):")
+    top_rows = [
+        [f"{tok} ({lp:.3f})", f"{stok} ({slp:.3f})"]
+        for (tok, lp), (stok, slp) in zip(base_top, steered_top)
+    ]
+    print(tabulate(top_rows, headers=["baseline", "steered"]))
+    print()
     print(tabulate(rows, headers=["target", "first token", "baseline", "steered", "delta"], floatfmt=".3f"))
 
 
