@@ -178,6 +178,7 @@ def extract(args):
     train, test = sample_stories(args.emotions, args.train_per_emotion, args.test_per_emotion, args.seed)
 
     print(f"Using layer {layer_idx}/{model.config.n_layer - 1}")
+    # TODO 试验使用其他层。也可以把所有层的数据都提取出来
     print(f"Extracting {len(train)} train and {len(test)} test activations")
 
     by_emotion = defaultdict(list)
@@ -358,6 +359,8 @@ def steer(args):
         model, tokenizer, prompt_ids, args.top_k,
         layer_idx=layer_idx, vector=vector, strength=args.strength, positions=args.positions,
     )
+
+    # TODO 这里试验 steer 多生成几步
 
     print(f"prompt: {args.prompt!r}")
     print(f"assistant_prefix: {args.assistant_prefix!r}")
