@@ -263,3 +263,87 @@ If the first pass shows signal:
 3. Compare `base` vs `sft` emotion activations.
 4. Use `deflection/dialogues.parquet` for real-vs-displayed emotion deflection.
 5. Build case studies for sycophancy (`loving`, `calm`) or repeated failure / coding tasks (`desperate`).
+
+## Sweep Results Analysis - 2026-05-13 10:00:05 EDT
+
+The `out` directory contains results from parameter sweeps corresponding to `myscripts/interp/emotion/emotion_sweep_params.sh`, plus additional runs for layers and max lengths outside the current script.
+
+Current script subset:
+
+```text
+layer=8  skip_tokens=0   max_len=256  eval_acc=0.375
+layer=8  skip_tokens=10  max_len=256  eval_acc=0.360
+layer=8  skip_tokens=20  max_len=256  eval_acc=0.365
+layer=16 skip_tokens=0   max_len=256  eval_acc=0.445
+layer=16 skip_tokens=10  max_len=256  eval_acc=0.440
+layer=16 skip_tokens=20  max_len=256  eval_acc=0.440
+```
+
+Main interpretation:
+
+1. Emotion vectors have measurable signal. Random baseline for four emotions is `0.25`, and the better runs reach roughly `0.44-0.45` top-1 accuracy.
+2. `layer=16` is clearly better than `layer=8` in the current script sweep.
+3. `skip_tokens` has little effect in the current script subset.
+4. Across all existing `out` results, `max_len=256` is better than `max_len=128` on average.
+5. The best observed eval accuracy is `layer=12 skip_tokens=20 max_len=256` with `0.450`, close to `layer=16` and several other `0.445` runs.
+
+Best observed configurations in the current `out` directory:
+
+```text
+layer=12 skip_tokens=20 max_len=256  eval_acc=0.450
+layer=4  skip_tokens=20 max_len=256  eval_acc=0.445
+layer=16 skip_tokens=0  max_len=256  eval_acc=0.445
+layer=22 skip_tokens=0  max_len=256  eval_acc=0.445
+```
+
+Steering summary:
+
+```text
+layer=8  skip_tokens=0   happy_delta=+0.318  sad_delta=-0.040
+layer=8  skip_tokens=10  happy_delta=+0.274  sad_delta=-0.040
+layer=8  skip_tokens=20  happy_delta=+0.320  sad_delta=-0.039
+layer=16 skip_tokens=0   happy_delta=+0.339  sad_delta=-0.019
+layer=16 skip_tokens=10  happy_delta=+0.381  sad_delta=-0.021
+layer=16 skip_tokens=20  happy_delta=+0.384  sad_delta=-0.019
+```
+
+The `happy` steering direction consistently increases the logprob of the `happy` target token. This supports the causal-effect claim, even though classification accuracy is still moderate. `layer=12 skip_tokens=20 max_len=256` also has one of the strongest observed happy steering effects, with `happy_delta=+0.410`.
+
+Logit-lens summary:
+
+```text
+happy -> excited, smile, cheer, birthday, adorable
+sad   -> darkness, sadness, loneliness, numb, memories
+angry -> destroying, injure, attacker, hurts, damages
+calm  -> gentle, subtle, ambient, relaxed, carefully
+```
+
+The token lists are semantically meaningful in middle and later layers. Early-layer results, especially `layer=4`, are noisier despite sometimes competitive eval accuracy.
+
+Important follow-up:
+
+The current probe evaluation may be inconsistent with vector construction. Vectors are computed as:
+
+```text
+v_emotion = mean_emotion - global_mean
+```
+
+But held-out activations are currently scored directly against the vector:
+
+```text
+score = cosine(mean_activation(text), v_emotion)
+```
+
+A more consistent evaluation should center held-out activations as well:
+
+```text
+score = cosine(mean_activation(text) - global_mean, v_emotion)
+```
+
+Next steps:
+
+1. Update `eval_probe` to subtract `global_mean` from each held-out activation before cosine scoring.
+2. Re-run the sweep and compare accuracy against the current results.
+3. Focus future sweeps on `layer=12` and `layer=16` with `max_len=256`.
+4. Keep `skip_tokens` simple, likely `0` and `20`, unless centered evaluation shows a stronger trend.
+5. Use both metrics for model selection: probe accuracy and steering specificity, where good steering should increase the target emotion logprob without increasing competing emotions.

@@ -58,6 +58,8 @@ def parse_args():
     add_common_model_args(eval_probe)
     eval_probe.add_argument("--vectors", type=str, default=os.path.join(DEFAULT_OUT_DIR, "vectors.pt"))
     eval_probe.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR)
+    eval_probe.add_argument("--center-act", action="store_true",
+                            help="Subtract global_mean from held-out activations before cosine scoring")
 
     logit_lens = subparsers.add_parser("logit-lens", help="Print top and bottom unembed tokens per emotion vector")
     add_common_model_args(logit_lens)
@@ -236,12 +238,14 @@ def eval_probe(args):
     emotions = data["emotions"]
     vectors = data["vectors"]
     test_acts = data["test_activations"]
+    global_mean = data["global_mean"]
 
     matrix = {emotion: {probe: [] for probe in emotions} for emotion in emotions}
     correct = 0
     total = 0
     for emotion, act in test_acts:
-        scores = {probe: normalized_dot(act, vectors[probe]) for probe in emotions}
+        a = (act - global_mean) if args.center_act else act
+        scores = {probe: normalized_dot(a, vectors[probe]) for probe in emotions}
         for probe, score in scores.items():
             matrix[emotion][probe].append(score)
         pred = max(scores, key=scores.get)

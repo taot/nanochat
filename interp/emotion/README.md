@@ -94,6 +94,12 @@ Evaluate held-out story projections:
 uv run python -m interp.emotion.emotion_probes eval-probe
 ```
 
+To center held-out activations before scoring (subtracts `global_mean`, consistent with how emotion vectors are constructed):
+
+```bash
+uv run python -m interp.emotion.emotion_probes eval-probe --center-act
+```
+
 Inspect unembed/logit-lens tokens for each direction:
 
 ```bash
@@ -123,6 +129,7 @@ uv run python -m interp.emotion.emotion_probes steer --emotion angry --strength 
 
 - Computes cosine projection of held-out story activations onto each emotion vector.
 - Prints a `true emotion x probe emotion` matrix and top-1 accuracy.
+- `--center-act`: subtract `global_mean` from each held-out activation before scoring, matching the centered space in which vectors were computed.
 
 `logit-lens`:
 
