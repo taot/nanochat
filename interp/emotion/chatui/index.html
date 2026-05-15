@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Chat UI with Emotion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { font-family: "Inter", system-ui, sans-serif; overflow: hidden; }
+  #root { width: 100vw; height: 100vh; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- chat-core: shared state + API calls -->
+<script type="text/babel">
+(function () {
+  // Fetched from /api/config on load; updated via setEmotions below.
+  let EMOTIONS_LIST = ["Happy", "Sad", "Angry", "Calm"];
+
+  async function detectEmotion(text) {
+    try {
+      const res = await fetch("/api/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const emotion = EMOTIONS_LIST.find(
+        (e) => e.toLowerCase() === String(data.emotion || "").toLowerCase()
+      ) || EMOTIONS_LIST[EMOTIONS_LIST.length - 1];
+      const confidence = Math.max(0, Math.min(1, Number(data.confidence) || 0));
+      return { emotion, confidence, scores: data.scores || {} };
+    } catch (e) {
+      return { emotion: EMOTIONS_LIST[EMOTIONS_LIST.length - 1], confidence: 0 };
+    }
+  }
+
+  async function generateReply(history, replyEmotion) {
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          replyEmotion,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      return data.reply;
+    } catch (e) {
+      return "(Reply failed — " + (e && e.message ? e.message : "unknown error") + ")";
+    }
+  }
+
+  function useChat(init) {
+    const [emotions, setEmotions] = React.useState(EMOTIONS_LIST);
+
+    // Fetch server-side emotion config on mount.
+    React.useEffect(() => {
+      fetch("/api/config")
+        .then((r) => r.json())
+        .then((d) => {
+          if (Array.isArray(d.emotions) && d.emotions.length) {
+            EMOTIONS_LIST = d.emotions;
+            setEmotions(d.emotions);
+          }
+        })
+        .catch(() => {});
+    }, []);
+
+    const initialMessages = React.useMemo(
+      () => (init && init.messages ? init.messages.map((m, i) => ({ id: "seed-" + i, ...m })) : []),
+      [],
+    );
+    const [messages, setMessages] = React.useState(initialMessages);
+    const [input, setInput] = React.useState("");
+    const [replyEmotion, setReplyEmotion] = React.useState(
+      (init && init.replyEmotion) || emotions[emotions.length - 1]
+    );
+    const [detecting, setDetecting] = React.useState(false);
+    const [thinking, setThinking] = React.useState(false);
+    const [lastDetection, setLastDetection] = React.useState(
+      (init && init.lastDetection) || null
+    );
+
+    const detect = React.useCallback(async () => {
+      const text = input.trim();
+      if (!text || detecting) return;
+      setDetecting(true);
+      const res = await detectEmotion(text);
+      setLastDetection({ ...res, text });
+      setDetecting(false);
+    }, [input, detecting]);
+
+    const send = React.useCallback(async () => {
+      const text = input.trim();
+      if (!text || thinking) return;
+      setInput("");
+      const userMsg = { id: Date.now() + "-u", role: "user", content: text };
+      setMessages((prev) => [...prev, userMsg]);
+      setThinking(true);
+
+      const detectPromise = detectEmotion(text).then((det) => {
+        setLastDetection({ ...det, text });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === userMsg.id ? { ...m, emotion: det } : m))
+        );
+      });
+
+      const history = [...messages, userMsg].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      const reply = await generateReply(history, replyEmotion);
+      await detectPromise;
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now() + "-a", role: "assistant", content: reply, replyEmotion },
+      ]);
+      setThinking(false);
+    }, [input, messages, replyEmotion, thinking]);
+
+    const clear = React.useCallback(() => {
+      setMessages([]);
+      setLastDetection(null);
+      setInput("");
+    }, []);
+
+    return {
+      messages, input, setInput,
+      replyEmotion, setReplyEmotion,
+      detect, send, clear,
+      detecting, thinking, lastDetection,
+      EMOTIONS: emotions,
+    };
+  }
+
+  Object.assign(window, { useChat, detectEmotion, generateReply });
+})();
+</script>
+
+<!-- workspace: UI components -->
+<script type="text/babel">
+(function () {
+  const PALETTES = {
+    slate: {
+      bg: "#ffffff", rail: "#f7f7f8", border: "rgba(15,23,42,0.08)",
+      borderStrong: "rgba(15,23,42,0.14)", text: "#0f172a",
+      muted: "#475569", mutedSoft: "#94a3b8", bubbleUser: "#eef2f5",
+    },
+  };
+
+  const F = '"Inter", system-ui, -apple-system, sans-serif';
+  const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
+
+  const DENSITY = {
+    regular: { msgGap: 16, padX: 28, padY: 18, msgFs: 14, lh: 1.55, headerY: 14 },
+  };
+
+  function LeftRail({ chat, T }) {
+    const turns = chat.messages.filter((m) => m.role === "user");
+    return (
+      <aside style={{
+        width: 220, flex: "0 0 220px", borderRight: "1px solid " + T.border,
+        background: T.rail, padding: "18px 14px",
+        display: "flex", flexDirection: "column", gap: 18,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Conversations</div>
+          <button onClick={chat.clear} title="New chat" style={{
+            border: "1px solid " + T.borderStrong, background: T.bg, width: 22, height: 22,
+            borderRadius: 5, cursor: "pointer", fontSize: 14, lineHeight: "20px", color: T.muted, padding: 0,
+          }}>+</button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{
+            padding: "8px 10px", background: T.bg, borderRadius: 6,
+            border: "1px solid " + T.border, fontSize: 13,
+          }}>
+            <div style={{ fontWeight: 500, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {turns[0]?.content?.slice(0, 28) || "Untitled session"}
+            </div>
+            <div style={{ fontSize: 11, color: T.mutedSoft, fontFamily: MONO, marginTop: 2 }}>
+              {turns.length} message{turns.length === 1 ? "" : "s"}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: "auto", padding: 10, borderRadius: 6, background: T.bg, border: "1px solid " + T.border }}>
+          <div style={{ fontSize: 11, color: T.mutedSoft, fontFamily: MONO, letterSpacing: 0.4, marginBottom: 4 }}>
+            REPLY MODE
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{chat.replyEmotion}</div>
+        </div>
+      </aside>
+    );
+  }
+
+  function Distribution({ lastDetection, emotions, T }) {
+    const scores = lastDetection && lastDetection.scores ? lastDetection.scores : {};
+    return (
+      <div>
+        <div style={{ fontSize: 11, fontFamily: MONO, color: T.mutedSoft, letterSpacing: 0.4, marginBottom: 10 }}>
+          LIKELIHOOD
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {emotions.map((e) => {
+            const pct = lastDetection ? Math.round((scores[e] || 0) * 100) : 0;
+            return (
+              <div key={e}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                  <span style={{ color: T.text }}>{e}</span>
+                  <span style={{ color: T.mutedSoft, fontFamily: MONO }}>{lastDetection ? pct + "%" : "—"}</span>
+                </div>
+                <div style={{ height: 2, background: T.border, borderRadius: 1, overflow: "hidden" }}>
+                  <div style={{ width: pct + "%", height: "100%", background: T.text, transition: "width .4s" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function RightRail({ chat, T, showConfidence }) {
+    const det = chat.lastDetection;
+    const pct = det ? Math.round(det.confidence * 100) : 0;
+    return (
+      <aside style={{
+        width: 300, flex: "0 0 300px", borderLeft: "1px solid " + T.border,
+        background: T.bg, padding: "20px 22px",
+        display: "flex", flexDirection: "column", gap: 24,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Emotion analysis</div>
+          <div style={{ fontSize: 11, fontFamily: MONO, color: T.mutedSoft, letterSpacing: 0.4 }}>
+            {chat.detecting ? "WORKING…" : det ? "LATEST" : "IDLE"}
+          </div>
+        </div>
+
+        <div style={{
+          border: "1px solid " + T.border, borderRadius: 8, padding: 16,
+          display: "flex", flexDirection: "column", gap: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: -0.4, color: T.text, lineHeight: 1 }}>
+              {det ? det.emotion : "—"}
+            </div>
+            {showConfidence && (
+              <div style={{ fontSize: 22, fontFamily: MONO, color: T.mutedSoft, fontWeight: 500 }}>
+                {det ? pct + "%" : "—"}
+              </div>
+            )}
+          </div>
+          {showConfidence && (
+            <div style={{ height: 3, background: T.border, borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ width: pct + "%", height: "100%", background: T.text, transition: "width .4s" }} />
+            </div>
+          )}
+          {det && (
+            <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5, paddingTop: 4, borderTop: "1px dashed " + T.border }}>
+              "{det.text.slice(0, 80)}{det.text.length > 80 ? "…" : ""}"
+            </div>
+          )}
+        </div>
+
+        <Distribution lastDetection={det} emotions={chat.EMOTIONS} T={T} />
+
+        <div style={{ marginTop: "auto", fontSize: 11, color: T.mutedSoft, lineHeight: 1.5 }}>
+          Analysis is per-message and may not reflect underlying intent.
+        </div>
+      </aside>
+    );
+  }
+
+  function Message({ m, T, D, showConfidence }) {
+    if (m.role === "user") {
+      return (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: D.msgGap }}>
+          <div style={{ maxWidth: "74%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            <div style={{
+              background: T.bubbleUser, padding: "10px 14px", borderRadius: 14,
+              fontSize: D.msgFs, lineHeight: D.lh, color: T.text, whiteSpace: "pre-wrap",
+              border: "1px solid " + T.border,
+            }}>{m.content}</div>
+            {m.emotion && (
+              <div style={{ fontSize: 10.5, color: T.mutedSoft, fontFamily: MONO, letterSpacing: 0.4 }}>
+                {m.emotion.emotion.toUpperCase()}{showConfidence ? " · " + Math.round(m.emotion.confidence * 100) + "%" : ""}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: "flex", gap: 10, marginBottom: D.msgGap + 4 }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 4, background: T.text,
+          color: T.bg, display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, fontWeight: 600, flexShrink: 0, marginTop: 2,
+        }}>A</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Assistant</div>
+            <div style={{ fontSize: 10.5, fontFamily: MONO, color: T.mutedSoft, letterSpacing: 0.4 }}>
+              REPLY · {(m.replyEmotion || "").toUpperCase()}
+            </div>
+          </div>
+          <div style={{ fontSize: D.msgFs, lineHeight: D.lh, color: T.text, whiteSpace: "pre-wrap" }}>
+            {m.content}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function Empty({ T }) {
+    return (
+      <div style={{ padding: "40px 0", display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.4, color: T.text }}>
+          Start a conversation
+        </div>
+        <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.55, maxWidth: 540 }}>
+          Type a message below. Press{" "}
+          <span style={{ fontFamily: MONO, fontSize: 12, padding: "1px 6px", background: T.rail, border: "1px solid " + T.border, borderRadius: 4 }}>Detect</span>
+          {" "}to analyze the tone of your draft, or send it to get a reply in your chosen mode.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, maxWidth: 540, marginTop: 8 }}>
+          {[
+            "Help me draft a polite decline to a meeting.",
+            "I'm frustrated about a deadline — can we talk through it?",
+            "Tell me something hopeful about today.",
+            "Walk me through a breathing exercise.",
+          ].map((q) => (
+            <div key={q} style={{
+              padding: 12, borderRadius: 8, border: "1px solid " + T.border,
+              fontSize: 13, color: T.muted, background: T.bg, lineHeight: 1.4,
+            }}>{q}</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function Workspace({ tweaks }) {
+    const chat = useChat();
+    const scrollerRef = React.useRef(null);
+    React.useEffect(() => {
+      const el = scrollerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, [chat.messages.length, chat.thinking]);
+
+    const T = PALETTES.slate;
+    const D = DENSITY.regular;
+
+    const onKey = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chat.send(); }
+    };
+
+    return (
+      <div style={{
+        width: "100%", height: "100%", background: T.bg, color: T.text,
+        fontFamily: F, display: "flex", flexDirection: "row",
+      }}>
+        <LeftRail chat={chat} T={T} />
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          {/* Header */}
+          <div style={{
+            padding: `${D.headerY}px ${D.padX}px`, borderBottom: "1px solid " + T.border,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>
+                {chat.messages.filter((m) => m.role === "user")[0]?.content?.slice(0, 38) || "New session"}
+              </div>
+              <div style={{ fontSize: 11, color: T.mutedSoft, fontFamily: MONO, marginTop: 2 }}>
+                {chat.messages.length} turns · reply mode: {chat.replyEmotion.toLowerCase()}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, fontFamily: MONO, color: T.mutedSoft }}>
+              <span style={{ padding: "4px 8px", border: "1px solid " + T.border, borderRadius: 4 }}>
+                auto-detect ON
+              </span>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div ref={scrollerRef} style={{ flex: 1, overflowY: "auto", padding: `${D.padY}px ${D.padX}px` }}>
+            <div style={{ maxWidth: 720, margin: "0 auto" }}>
+              {chat.messages.length === 0 ? <Empty T={T} /> : (
+                <>
+                  {chat.messages.map((m) => (
+                    <Message key={m.id} m={m} T={T} D={D} showConfidence={true} />
+                  ))}
+                  {chat.thinking && (
+                    <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+                      <div style={{
+                        width: 22, height: 22, borderRadius: 4, background: T.text, color: T.bg,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: 600, flexShrink: 0, marginTop: 2, opacity: 0.4,
+                      }}>A</div>
+                      <div style={{ paddingTop: 8, display: "flex", gap: 4 }}>
+                        {[0, 1, 2].map((i) => (
+                          <span key={i} style={{
+                            width: 5, height: 5, borderRadius: 3, background: T.mutedSoft,
+                            animation: "ws-pulse 1.2s ease-in-out infinite",
+                            animationDelay: (i * 0.15) + "s",
+                          }} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Composer */}
+          <div style={{ padding: `${D.headerY - 2}px ${D.padX}px ${D.padY}px`, borderTop: "1px solid " + T.border }}>
+            <div style={{ maxWidth: 720, margin: "0 auto" }}>
+              <div style={{
+                background: T.bg, border: "1px solid " + T.borderStrong, borderRadius: 10,
+                padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8,
+              }}>
+                <textarea
+                  value={chat.input}
+                  onChange={(e) => chat.setInput(e.target.value)}
+                  onKeyDown={onKey}
+                  placeholder="Type a message…"
+                  rows={2}
+                  style={{
+                    border: "none", outline: "none", resize: "none", width: "100%",
+                    fontFamily: F, fontSize: D.msgFs, lineHeight: 1.5, color: T.text,
+                    background: "transparent", minHeight: 38,
+                  }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <button
+                    onClick={chat.detect}
+                    disabled={!chat.input.trim() || chat.detecting}
+                    style={{
+                      border: "1px solid " + T.borderStrong, background: T.bg,
+                      padding: "5px 10px", borderRadius: 6, fontSize: 12,
+                      color: T.text, cursor: "pointer", fontFamily: F, fontWeight: 500,
+                      opacity: (!chat.input.trim() || chat.detecting) ? 0.4 : 1,
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                      <circle cx="4.5" cy="4.5" r="3" />
+                      <path d="M7 7l2.5 2.5" />
+                    </svg>
+                    {chat.detecting ? "Analyzing…" : "Detect"}
+                  </button>
+                  <div style={{ flex: 1 }} />
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={chat.replyEmotion}
+                      onChange={(e) => chat.setReplyEmotion(e.target.value)}
+                      style={{
+                        appearance: "none", WebkitAppearance: "none", MozAppearance: "none",
+                        border: "1px solid " + T.borderStrong, background: T.bg,
+                        padding: "5px 26px 5px 10px", borderRadius: 6, fontSize: 12,
+                        color: T.text, cursor: "pointer", fontFamily: F, fontWeight: 500,
+                      }}>
+                      {chat.EMOTIONS.map((e) => <option key={e} value={e}>Reply: {e}</option>)}
+                    </select>
+                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke={T.text} strokeWidth="1.6"
+                      style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+                      <path d="M1.5 3.2L4.5 6 7.5 3.2" />
+                    </svg>
+                  </div>
+                  <button
+                    onClick={chat.send}
+                    disabled={!chat.input.trim() || chat.thinking}
+                    style={{
+                      border: "none", background: T.text, color: T.bg,
+                      padding: "6px 14px", borderRadius: 6, fontSize: 13, fontWeight: 500,
+                      fontFamily: F, cursor: "pointer",
+                      opacity: (!chat.input.trim() || chat.thinking) ? 0.4 : 1,
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                    Send
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                      <path d="M2 5.5h6.5M5.5 2.5L8.5 5.5 5.5 8.5" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <RightRail chat={chat} T={T} showConfidence={true} />
+
+        <style>{`@keyframes ws-pulse { 0%,100% { opacity:.25 } 50% { opacity:1 } }`}</style>
+      </div>
+    );
+  }
+
+  window.Workspace = Workspace;
+})();
+</script>
+
+<!-- App entry point -->
+<script type="text/babel">
+  function App() {
+    return <Workspace />;
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
