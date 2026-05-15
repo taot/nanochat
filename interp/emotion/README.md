@@ -114,6 +114,51 @@ uv run python -m interp.emotion.emotion_probes steer --emotion sad --strength 2.
 uv run python -m interp.emotion.emotion_probes steer --emotion angry --strength 2.0
 ```
 
+## Chat UI
+
+A small FastAPI app under `interp/emotion/chatui/` serves a browser-based chat that does live emotion detection on user messages and lets you pick the emotional tone of each reply. Two backends are available behind a single `--backend` flag:
+
+- `llm` — uses OpenRouter-hosted Claude models (Haiku for classification, Sonnet for replies). Requires `OPENROUTER_API_KEY`. This is the default.
+- `nanochat` — uses the local nanochat checkpoint plus the trained probes from `extract` above: cosine similarity against emotion vectors for `/api/detect`, and activation steering at the probe's layer for `/api/chat`.
+
+### Run the LLM backend
+
+```bash
+export OPENROUTER_API_KEY=sk-...
+uv run python -m interp.emotion.chatui.server --backend llm --port 8001
+```
+
+The old bare-uvicorn launch also still works and defaults to the LLM backend:
+
+```bash
+uv run uvicorn interp.emotion.chatui.server:app --port 8001
+```
+
+### Run the nanochat backend
+
+First make sure you have a trained probe file (see [Full First Pass](#full-first-pass)). Then:
+
+```bash
+uv run python -m interp.emotion.chatui.server \
+  --backend nanochat \
+  --vectors out/emotion_probes_layer_12_skiptokens_0_maxlen_128/vectors.pt \
+  --source sft --model-tag d24 --step 483 \
+  --strength 2.0 \
+  --port 8001
+```
+
+Then open `http://127.0.0.1:8001` in a browser. `OPENROUTER_API_KEY` is not required for the nanochat backend.
+
+Flags:
+
+- `--backend {llm, nanochat}`: which backend to serve from. Default `llm`.
+- `--vectors PATH`: probe `vectors.pt` to load (nanochat backend only).
+- `--source {base, sft, rl}`, `--model-tag`, `--step`: which nanochat checkpoint to load.
+- `--strength FLOAT`: activation steering strength for the reply backend. Larger values push replies harder toward the chosen emotion at the cost of fluency.
+- `--host`, `--port`: bind address.
+
+The set of emotions shown in the UI is controlled by the `EMOTIONS` list at the top of `interp/emotion/chatui/server.py`. For the nanochat backend the chosen emotions must also exist as keys in the loaded `vectors.pt`.
+
 ## What The Script Does
 
 `extract`:
