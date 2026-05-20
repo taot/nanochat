@@ -69,13 +69,15 @@ def parse_args():
     steer = subparsers.add_parser("steer", help="Measure next-token logprob changes under activation steering")
     add_common_model_args(steer)
     steer.add_argument("--vectors", type=str, default=os.path.join(DEFAULT_OUT_DIR, "vectors.pt"))
-    steer.add_argument("--emotion", type=str, default="happy")
+    steer.add_argument("--emotion", nargs="+", default=["happy"])
     steer.add_argument("--strength", type=float, default=2.0)
     steer.add_argument("--prompt", type=str, default="How does he feel?")
     steer.add_argument("--assistant-prefix", type=str, default="He feels")
     steer.add_argument("--targets", nargs="+", default=DEFAULT_EMOTIONS)
     steer.add_argument("--positions", choices=["all", "last"], default="all")
     steer.add_argument("--top-k", type=int, default=10)
+    steer.add_argument("--gen-steps", type=int, default=20,
+                       help="Number of tokens to generate under steering (0 = skip)")
 
     return parser.parse_args()
 
@@ -333,50 +335,73 @@ def top_next_tokens(model, tokenizer, prompt_ids, k, layer_idx=None, vector=None
     return [(token_label(tokenizer, int(i)), v.item()) for v, i in zip(vals, ids)]
 
 
+@torch.inference_mode()
+def generate_steered(model, tokenizer, prompt_ids, gen_steps, layer_idx=None, vector=None, strength=0.0, positions="all"):
+    ctx = steer_layer(model, layer_idx, vector, strength, positions) if vector is not None else nullcontext()
+    generated = []
+    with ctx:
+        for tok_id in model.generate(prompt_ids, max_tokens=gen_steps):
+            generated.append(tok_id)
+    return tokenizer.decode(generated)
+
+
 def steer(args):
     model, tokenizer, _ = init_model(args)
     data = load_vectors(args.vectors)
-    if args.emotion not in data["vectors"]:
-        raise ValueError(f"Unknown emotion {args.emotion!r}; available: {', '.join(data['emotions'])}")
+    unknown = [e for e in args.emotion if e not in data["vectors"]]
+    if unknown:
+        raise ValueError(f"Unknown emotion(s) {unknown!r}; available: {', '.join(data['emotions'])}")
     layer_idx = data["layer"]
     prompt_ids = render_chat_prompt(tokenizer, args.prompt, args.assistant_prefix)
-    vector = data["vectors"][args.emotion]
-
-    baseline = next_token_logprobs(model, tokenizer, prompt_ids, args.targets)
-    steered = next_token_logprobs(
-        model,
-        tokenizer,
-        prompt_ids,
-        args.targets,
-        layer_idx=layer_idx,
-        vector=vector,
-        strength=args.strength,
-        positions=args.positions,
-    )
-    by_target = {target: (tok, lp) for target, tok, lp in baseline}
-    rows = []
-    for target, tok, lp in steered:
-        _, base_lp = by_target[target]
-        rows.append([target, tok, base_lp, lp, lp - base_lp])
-    base_top = top_next_tokens(model, tokenizer, prompt_ids, args.top_k)
-    steered_top = top_next_tokens(
-        model, tokenizer, prompt_ids, args.top_k,
-        layer_idx=layer_idx, vector=vector, strength=args.strength, positions=args.positions,
-    )
-
-    # TODO 这里试验 steer 多生成几步
 
     print(f"prompt: {args.prompt!r}")
     print(f"assistant_prefix: {args.assistant_prefix!r}")
-    print(f"steering: emotion={args.emotion}, layer={layer_idx}, strength={args.strength}, positions={args.positions}")
-    print("\ntop next tokens (baseline vs steered):")
-    top_rows = [
-        [f"{tok} ({lp:.3f})", f"{stok} ({slp:.3f})"]
-        for (tok, lp), (stok, slp) in zip(base_top, steered_top)
-    ]
-    print(tabulate(top_rows, headers=["baseline", "steered"]))
-    print()
-    print(tabulate(rows, headers=["target", "first token", "baseline", "steered", "delta"], floatfmt=".3f"))
+    print(f"layer={layer_idx}, strength={args.strength}, positions={args.positions}")
+
+    baseline = next_token_logprobs(model, tokenizer, prompt_ids, args.targets)
+    by_target = {target: (tok, lp) for target, tok, lp in baseline}
+    base_top = top_next_tokens(model, tokenizer, prompt_ids, args.top_k)
+
+    print("\ntop next tokens (baseline):")
+    print(tabulate([[f"{tok} ({lp:.3f})"] for tok, lp in base_top], headers=["baseline"]))
+    if args.gen_steps > 0:
+        base_text = generate_steered(model, tokenizer, prompt_ids, args.gen_steps)
+        print(f"\nbaseline generation:\n  {base_text!r}")
+
+    for emotion in args.emotion:
+        vector = data["vectors"][emotion]
+        steered = next_token_logprobs(
+            model,
+            tokenizer,
+            prompt_ids,
+            args.targets,
+            layer_idx=layer_idx,
+            vector=vector,
+            strength=args.strength,
+            positions=args.positions,
+        )
+        rows = []
+        for target, tok, lp in steered:
+            _, base_lp = by_target[target]
+            rows.append([target, tok, base_lp, lp, lp - base_lp])
+        steered_top = top_next_tokens(
+            model, tokenizer, prompt_ids, args.top_k,
+            layer_idx=layer_idx, vector=vector, strength=args.strength, positions=args.positions,
+        )
+
+        print(f"\n=== emotion: {emotion} ===")
+        print("top next tokens (steered):")
+        print(tabulate([[f"{tok} ({lp:.3f})"] for tok, lp in steered_top], headers=["steered"]))
+        print()
+        print(tabulate(rows, headers=["target", "first token", "baseline", "steered", "delta"], floatfmt=".3f"))
+        if args.gen_steps > 0:
+            text = generate_steered(
+                model, tokenizer, prompt_ids, args.gen_steps,
+                layer_idx=layer_idx, vector=vector, strength=args.strength, positions=args.positions,
+            )
+            print(f"\nsteered generation ({emotion}):\n  {text!r}")
+
+
 
 
 def main():

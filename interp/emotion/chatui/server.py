@@ -286,7 +286,7 @@ def main():
     p.add_argument("--port", type=int, default=8001)
     p.add_argument("--host", default="127.0.0.1")
     # nanochat-only knobs
-    p.add_argument("--vectors", default="out/emotion_probes_layer_12_skiptokens_0_maxlen_128/vectors.pt")
+    p.add_argument("--vectors", default="out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt")
     p.add_argument("--source", choices=["base", "sft", "rl"], default="sft")
     p.add_argument("--model-tag", default=None)
     p.add_argument("--step", type=int, default=None)

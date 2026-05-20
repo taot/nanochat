@@ -64,7 +64,8 @@ uv run python -m interp.emotion.emotion_probes steer \
   --vectors out/emotion_probes_smoke/vectors.pt \
   --emotion happy \
   --targets happy sad \
-  --strength 0.1
+  --strength 0.1 \
+  --gen-steps 0
 ```
 
 ## Full First Pass
@@ -114,6 +115,8 @@ uv run python -m interp.emotion.emotion_probes steer --emotion sad --strength 2.
 uv run python -m interp.emotion.emotion_probes steer --emotion angry --strength 2.0
 ```
 
+Each `steer` run also generates `--gen-steps` tokens (default 20) under steering so you can read the actual steered text. Pass `--gen-steps 0` to skip generation and only see the logprob table.
+
 ## Chat UI
 
 A small FastAPI app under `interp/emotion/chatui/` serves a browser-based chat that does live emotion detection on user messages and lets you pick the emotional tone of each reply. Two backends are available behind a single `--backend` flag:
@@ -141,7 +144,7 @@ First make sure you have a trained probe file (see [Full First Pass](#full-first
 ```bash
 uv run python -m interp.emotion.chatui.server \
   --backend nanochat \
-  --vectors out/emotion_probes_layer_12_skiptokens_0_maxlen_128/vectors.pt \
+  --vectors out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt \
   --source sft --model-tag d24 --step 483 \
   --strength 2.0 \
   --port 8001
@@ -186,6 +189,7 @@ The set of emotions shown in the UI is controlled by the `EMOTIONS` list at the 
 - Builds a chat prompt.
 - Adds `strength * v_emotion` at the extraction layer through a forward hook.
 - Compares baseline vs steered next-token logprobs for target emotion words.
+- Generates `--gen-steps` tokens (default 20) under steering to produce readable steered text.
 
 ## Notes
 

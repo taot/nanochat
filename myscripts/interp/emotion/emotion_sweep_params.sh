@@ -60,9 +60,10 @@ run_analyze() {
         --model-tag d24 \
         --step 483 \
         --vectors out/emotion_probes${name_postfix}/vectors.pt \
-        --emotion happy \
-        --targets happy sad \
-        --strength 0.5 | tee -a out/results${name_postfix}_steer.log
+        --emotion happy sad angry calm \
+        --targets happy sad angry calm \
+        --gen-steps 10 \
+        --strength 0.5 | tee out/results${name_postfix}_steer.log
 
     uv run python -m interp.emotion.emotion_probes logit-lens \
         --device-type $device_type \
