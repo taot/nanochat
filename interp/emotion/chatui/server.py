@@ -33,7 +33,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from interp.emotion.emotion_probes import load_vectors, steer_layer, story_activation
+from interp.emotion.emotion_probes import generate_steered, load_vectors, steer_layer, story_activation, render_chat_prompt
 from nanochat.checkpoint_manager import load_model
 from nanochat.common import autodetect_device_type, compute_init
 from nanochat.engine import Engine
@@ -66,6 +66,7 @@ class ChatRequest(BaseModel):
     messages: list[Message]
     replyEmotion: str
     strength: float | None = None
+    assistantPrefix: str | None = None
 
 # ── Backend abstraction ───────────────────────────────────────────────────────
 class Backend(ABC):
@@ -74,7 +75,7 @@ class Backend(ABC):
         """Return a Title-case emotion → probability dict summing to ~1."""
 
     @abstractmethod
-    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None) -> str:
+    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None, assistant_prefix: str | None = None) -> str:
         """Return the assistant's reply text."""
 
 
@@ -114,7 +115,7 @@ class LLMBackend(Backend):
         except Exception:
             return {e: (1.0 if e == EMOTIONS[-1] else 0.0) for e in EMOTIONS}
 
-    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None) -> str:
+    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None, assistant_prefix: str | None = None) -> str:
         if reply_emotion.lower() == "none":
             style_note = "Keep replies to 1–3 sentences unless the user asks for more."
         else:
@@ -127,12 +128,15 @@ class LLMBackend(Backend):
             {"role": "assistant", "content": "Understood."},
             *[{"role": m.role, "content": m.content} for m in messages],
         ]
+        if assistant_prefix:
+            payload.append({"role": "assistant", "content": assistant_prefix})
         resp = self.client.chat.completions.create(
             model=self.reply_model,
             max_tokens=512,
             messages=payload,
         )
-        return resp.choices[0].message.content
+        continuation = resp.choices[0].message.content or ""
+        return (assistant_prefix + continuation) if assistant_prefix else continuation
 
 
 class NanochatBackend(Backend):
@@ -144,6 +148,8 @@ class NanochatBackend(Backend):
         step: int | None = None,
         strength: float = 2.0,
         device_type: str | None = None,
+        gen_mode: str = "engine",
+        gen_steps: int = 64,
     ):
         if device_type is None:
             device_type = autodetect_device_type()
@@ -165,6 +171,8 @@ class NanochatBackend(Backend):
         self.vectors = self.data["vectors"]            # lowercase keys
         self.probe_emotions = self.data["emotions"]
         self.strength = strength
+        self.gen_mode = gen_mode
+        self.gen_steps = gen_steps
 
         self.bos = self.tokenizer.get_bos_token_id()
         self.user_start = self.tokenizer.encode_special("<|user_start|>")
@@ -192,41 +200,92 @@ class NanochatBackend(Backend):
         probs = F.softmax(logits / 0.1, dim=0).tolist()
         return {e: probs[i] for i, e in enumerate(EMOTIONS)}
 
-    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None) -> str:
+    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None, assistant_prefix: str | None = None) -> str:
         print("messages:", messages)
-        prompt_ids = self._render_multi_turn(messages)
+        print("assistant_prefix:", assistant_prefix)
+        prompt_ids = self._render_multi_turn(messages, assistant_prefix or "")
         print("prompt_ids:", prompt_ids)
+        print("decoded prompot: ", self.tokenizer.decode(prompt_ids))
+
         vector = self.vectors.get(reply_emotion.lower())
         print("vector:", vector)
         effective_strength = strength if strength is not None else self.strength
-        ctx = (
-            steer_layer(self.model, self.layer, vector, effective_strength, positions="all")
-            if vector is not None
-            else nullcontext()
-        )
-        with ctx:
-            result_tokens = self.engine.generate_batch(
-                prompt_ids, num_samples=1, max_tokens=512, temperature=0.8, top_k=50,
-            )[0]
 
-        print("result_tokens:", result_tokens)
-        new_tokens = result_tokens[0][len(prompt_ids):]
+        print("effective_strength:", effective_strength)
+        print("gen_mode:", self.gen_mode)
+        print("gen_steps:", self.gen_steps)
 
-        print("New tokens:", new_tokens)
-        print("New text:", self.tokenizer.decode(new_tokens))
+        if self.gen_mode == "model":
+            # prompt_ids2 = render_chat_prompt(self.tokenizer, "How does he feel?", "He feels")
+            # print("prompt_ids2:", prompt_ids2)
+            # print("decoded prompt2: ", self.tokenizer.decode(prompt_ids2))
 
-        return self.tokenizer.decode(new_tokens)
+            return generate_steered(
+                self.model, self.tokenizer, prompt_ids,
+                gen_steps=self.gen_steps,
+                layer_idx=self.layer,
+                vector=vector,
+                strength=effective_strength,
+                positions="all",
+                temperature=0.8,
+            )
 
-    def _render_multi_turn(self, messages: list[Message]) -> list[int]:
+            # ctx = (
+            #     steer_layer(self.model, self.layer, vector, effective_strength, positions="all")
+            #     if vector is not None
+            #     else nullcontext()
+            # )
+            # with ctx:
+            #     result_tokens = self.engine.generate_batch(
+            #         prompt_ids, num_samples=1, max_tokens=512, temperature=0.8, top_k=50,
+            #     )[0]
+
+            # print("result_tokens:", result_tokens)
+            # new_tokens = result_tokens[0][len(prompt_ids):]
+
+            # print("New tokens:", new_tokens)
+            # print("New text:", self.tokenizer.decode(new_tokens))
+
+            # decoded = self.tokenizer.decode(new_tokens)
+            # return (assistant_prefix + decoded) if assistant_prefix else decoded
+
+        else:
+            ctx = (
+                steer_layer(self.model, self.layer, vector, effective_strength, positions="all")
+                if vector is not None
+                else nullcontext()
+            )
+            with ctx:
+                result_tokens = self.engine.generate_batch(
+                    prompt_ids, num_samples=1, max_tokens=512, temperature=0.8, top_k=50,
+                )[0]
+
+            print("result_tokens:", result_tokens)
+            new_tokens = result_tokens[0][len(prompt_ids):]
+
+            print("New tokens:", new_tokens)
+            print("New text:", self.tokenizer.decode(new_tokens))
+
+            decoded = self.tokenizer.decode(new_tokens)
+            return (assistant_prefix + decoded) if assistant_prefix else decoded
+
+    def _render_multi_turn(self, messages: list[Message], assistant_prefix: str = "") -> list[int]:
         ids: list[int] = [self.bos]
         for i, m in enumerate(messages):
             is_last = i == len(messages) - 1
             start = self.user_start if m.role == "user" else self.assistant_start
             ids.append(start)
             ids.extend(self.tokenizer.encode(m.content))
+
+            print(f"_render_multi_turn loop: {i} {m.role} {m.content}")
+
             if is_last and m.role == "user":
+                print("is_last and m.role == user")
                 ids.append(self.user_end)
                 ids.append(self.assistant_start)
+                if assistant_prefix:
+                    print("adding assistant prefix")
+                    ids.extend(self.tokenizer.encode(assistant_prefix))
             else:
                 ids.append(self.user_end if m.role == "user" else self.assistant_end)
         return ids
@@ -263,7 +322,7 @@ def detect(req: DetectRequest):
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    return {"reply": _ensure_backend().chat(req.messages, req.replyEmotion, req.strength)}
+    return {"reply": _ensure_backend().chat(req.messages, req.replyEmotion, req.strength, req.assistantPrefix)}
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -277,6 +336,8 @@ def _build_backend(args: argparse.Namespace) -> Backend:
         step=args.step,
         strength=args.strength,
         device_type=args.device_type,
+        gen_mode=args.gen_mode,
+        gen_steps=args.gen_steps,
     )
 
 
@@ -293,6 +354,10 @@ def main():
     p.add_argument("--strength", type=float, default=2.0)
     p.add_argument("--device-type", choices=["cuda", "cpu", "mps"], default=None,
                    help="Device type for nanochat: cuda|cpu|mps. Default: autodetect")
+    p.add_argument("--gen-mode", choices=["engine", "model"], default="engine",
+                   help="nanochat generation method: engine (batch+tools) or model (simple autoregressive)")
+    p.add_argument("--gen-steps", type=int, default=64,
+                   help="max tokens to generate in model mode (nanochat backend only)")
     args = p.parse_args()
 
     globals()["backend"] = _build_backend(args)

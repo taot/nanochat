@@ -336,11 +336,11 @@ def top_next_tokens(model, tokenizer, prompt_ids, k, layer_idx=None, vector=None
 
 
 @torch.inference_mode()
-def generate_steered(model, tokenizer, prompt_ids, gen_steps, layer_idx=None, vector=None, strength=0.0, positions="all"):
+def generate_steered(model, tokenizer, prompt_ids, gen_steps, layer_idx=None, vector=None, strength=0.0, positions="all", temperature=1.0):
     ctx = steer_layer(model, layer_idx, vector, strength, positions) if vector is not None else nullcontext()
     generated = []
     with ctx:
-        for tok_id in model.generate(prompt_ids, max_tokens=gen_steps):
+        for tok_id in model.generate(prompt_ids, max_tokens=gen_steps, temperature=temperature):
             generated.append(tok_id)
     return tokenizer.decode(generated)
 

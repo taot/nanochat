@@ -144,6 +144,7 @@ First make sure you have a trained probe file (see [Full First Pass](#full-first
 ```bash
 uv run python -m interp.emotion.chatui.server \
   --backend nanochat \
+  --gen-mode engine \
   --vectors out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt \
   --source sft --model-tag d24 --step 483 \
   --strength 2.0 \
@@ -158,6 +159,10 @@ Flags:
 - `--vectors PATH`: probe `vectors.pt` to load (nanochat backend only).
 - `--source {base, sft, rl}`, `--model-tag`, `--step`: which nanochat checkpoint to load.
 - `--strength FLOAT`: activation steering strength for the reply backend. Larger values push replies harder toward the chosen emotion at the cost of fluency.
+- `--gen-mode {engine, model}`: generation method for the nanochat backend. Default `engine`.
+  - `engine`: uses `Engine.generate_batch()` with temperature/top-k sampling and tool-use support.
+  - `model`: uses `GPT.generate()` directly (simple autoregressive, no tool use), the same method as `emotion_probes steer --gen-steps`.
+- `--gen-steps INT`: max tokens to generate in `model` mode. Default `64`.
 - `--host`, `--port`: bind address.
 
 The set of emotions shown in the UI is controlled by the `EMOTIONS` list at the top of `interp/emotion/chatui/server.py`. For the nanochat backend the chosen emotions must also exist as keys in the loaded `vectors.pt`.

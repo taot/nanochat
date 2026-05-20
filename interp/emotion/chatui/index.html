@@ -44,7 +44,7 @@
     }
   }
 
-  async function generateReply(history, replyEmotion, strength) {
+  async function generateReply(history, replyEmotion, strength, assistantPrefix) {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -53,6 +53,7 @@
           messages: history.map((m) => ({ role: m.role, content: m.content })),
           replyEmotion,
           strength,
+          assistantPrefix: assistantPrefix || null,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -91,6 +92,7 @@
       (init && init.replyEmotion) || "None"
     );
     const [strength, setStrength] = React.useState(2.0);
+    const [assistantPrefix, setAssistantPrefix] = React.useState("");
     const [backend, setBackend] = React.useState("llm");
     const [detecting, setDetecting] = React.useState(false);
     const [thinking, setThinking] = React.useState(false);
@@ -126,14 +128,14 @@
         role: m.role,
         content: m.content,
       }));
-      const reply = await generateReply(history, replyEmotion, strength);
+      const reply = await generateReply(history, replyEmotion, strength, assistantPrefix);
       await detectPromise;
       setMessages((prev) => [
         ...prev,
         { id: Date.now() + "-a", role: "assistant", content: reply, replyEmotion },
       ]);
       setThinking(false);
-    }, [input, messages, replyEmotion, thinking]);
+    }, [input, messages, replyEmotion, strength, assistantPrefix, thinking]);
 
     const clear = React.useCallback(() => {
       setMessages([]);
@@ -145,6 +147,7 @@
       messages, input, setInput,
       replyEmotion, setReplyEmotion,
       strength, setStrength, backend,
+      assistantPrefix, setAssistantPrefix,
       detect, send, clear,
       detecting, thinking, lastDetection,
       EMOTIONS: emotions,
@@ -453,6 +456,20 @@
                     background: "transparent", minHeight: 38,
                   }}
                 />
+                <div style={{ display: "flex", alignItems: "center", gap: 6, borderTop: "1px solid " + T.border, paddingTop: 6 }}>
+                  <span style={{ fontSize: 11, color: T.mutedSoft, fontFamily: MONO, whiteSpace: "nowrap", letterSpacing: 0.4 }}>ASSISTANT PREFIX</span>
+                  <input
+                    type="text"
+                    value={chat.assistantPrefix}
+                    onChange={(e) => chat.setAssistantPrefix(e.target.value)}
+                    placeholder="Assistant starts with…"
+                    style={{
+                      flex: 1, border: "1px solid " + T.border, background: T.rail,
+                      padding: "4px 8px", borderRadius: 5, fontSize: 12,
+                      color: T.text, fontFamily: F, outline: "none",
+                    }}
+                  />
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <button
                     onClick={chat.detect}
