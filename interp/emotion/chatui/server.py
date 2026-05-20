@@ -276,7 +276,7 @@ def _build_backend(args: argparse.Namespace) -> Backend:
         model_tag=args.model_tag,
         step=args.step,
         strength=args.strength,
-        device_type=args.device,
+        device_type=args.device_type,
     )
 
 
@@ -291,7 +291,7 @@ def main():
     p.add_argument("--model-tag", default=None)
     p.add_argument("--step", type=int, default=None)
     p.add_argument("--strength", type=float, default=2.0)
-    p.add_argument("--device", choices=["cuda", "cpu", "mps"], default=None,
+    p.add_argument("--device-type", choices=["cuda", "cpu", "mps"], default=None,
                    help="Device type for nanochat: cuda|cpu|mps. Default: autodetect")
     args = p.parse_args()
 
