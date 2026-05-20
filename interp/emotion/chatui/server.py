@@ -150,6 +150,10 @@ class NanochatBackend(Backend):
         self.engine = Engine(self.model, self.tokenizer)
 
         self.data = load_vectors(vectors_path)
+        print(self.data["vectors"])
+        for emotion, vec in self.data["vectors"].items():
+            print(emotion, vec, vec.shape)
+
         self.layer = self.data["layer"]
         self.max_len = self.data["max_len"]
         self.skip_tokens = self.data["skip_tokens"]
@@ -185,8 +189,11 @@ class NanochatBackend(Backend):
         return {e: probs[i] for i, e in enumerate(EMOTIONS)}
 
     def chat(self, messages: list[Message], reply_emotion: str) -> str:
+        print("messages:", messages)
         prompt_ids = self._render_multi_turn(messages)
+        print("prompt_ids:", prompt_ids)
         vector = self.vectors.get(reply_emotion.lower())
+        print("vector:", vector)
         ctx = (
             steer_layer(self.model, self.layer, vector, self.strength, positions="all")
             if vector is not None
@@ -196,7 +203,13 @@ class NanochatBackend(Backend):
             result_tokens = self.engine.generate_batch(
                 prompt_ids, num_samples=1, max_tokens=512, temperature=0.8, top_k=50,
             )[0]
-        new_tokens = result_tokens[len(prompt_ids):]
+
+        print("result_tokens:", result_tokens)
+        new_tokens = result_tokens[0][len(prompt_ids):]
+
+        print("New tokens:", new_tokens)
+        print("New text:", self.tokenizer.decode(new_tokens))
+
         return self.tokenizer.decode(new_tokens)
 
     def _render_multi_turn(self, messages: list[Message]) -> list[int]:
