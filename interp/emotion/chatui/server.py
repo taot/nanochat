@@ -65,6 +65,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[Message]
     replyEmotion: str
+    strength: float | None = None
 
 # ── Backend abstraction ───────────────────────────────────────────────────────
 class Backend(ABC):
@@ -73,7 +74,7 @@ class Backend(ABC):
         """Return a Title-case emotion → probability dict summing to ~1."""
 
     @abstractmethod
-    def chat(self, messages: list[Message], reply_emotion: str) -> str:
+    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None) -> str:
         """Return the assistant's reply text."""
 
 
@@ -113,7 +114,7 @@ class LLMBackend(Backend):
         except Exception:
             return {e: (1.0 if e == EMOTIONS[-1] else 0.0) for e in EMOTIONS}
 
-    def chat(self, messages: list[Message], reply_emotion: str) -> str:
+    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None) -> str:
         if reply_emotion.lower() == "none":
             style_note = "Keep replies to 1–3 sentences unless the user asks for more."
         else:
@@ -191,14 +192,15 @@ class NanochatBackend(Backend):
         probs = F.softmax(logits / 0.1, dim=0).tolist()
         return {e: probs[i] for i, e in enumerate(EMOTIONS)}
 
-    def chat(self, messages: list[Message], reply_emotion: str) -> str:
+    def chat(self, messages: list[Message], reply_emotion: str, strength: float | None = None) -> str:
         print("messages:", messages)
         prompt_ids = self._render_multi_turn(messages)
         print("prompt_ids:", prompt_ids)
         vector = self.vectors.get(reply_emotion.lower())
         print("vector:", vector)
+        effective_strength = strength if strength is not None else self.strength
         ctx = (
-            steer_layer(self.model, self.layer, vector, self.strength, positions="all")
+            steer_layer(self.model, self.layer, vector, effective_strength, positions="all")
             if vector is not None
             else nullcontext()
         )
@@ -245,7 +247,10 @@ def index():
 
 @app.get("/api/config")
 def config():
-    return {"emotions": EMOTIONS}
+    b = _ensure_backend()
+    backend_type = "nanochat" if isinstance(b, NanochatBackend) else "llm"
+    strength = b.strength if isinstance(b, NanochatBackend) else 2.0
+    return {"emotions": EMOTIONS, "backend": backend_type, "strength": strength}
 
 @app.post("/api/detect")
 def detect(req: DetectRequest):
@@ -258,7 +263,7 @@ def detect(req: DetectRequest):
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    return {"reply": _ensure_backend().chat(req.messages, req.replyEmotion)}
+    return {"reply": _ensure_backend().chat(req.messages, req.replyEmotion, req.strength)}
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
