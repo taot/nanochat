@@ -114,10 +114,13 @@ class LLMBackend(Backend):
             return {e: (1.0 if e == EMOTIONS[-1] else 0.0) for e in EMOTIONS}
 
     def chat(self, messages: list[Message], reply_emotion: str) -> str:
-        style_note = (
-            f"Reply in a {reply_emotion.lower()} tone. "
-            "Keep replies to 1–3 sentences unless the user asks for more."
-        )
+        if reply_emotion.lower() == "none":
+            style_note = "Keep replies to 1–3 sentences unless the user asks for more."
+        else:
+            style_note = (
+                f"Reply in a {reply_emotion.lower()} tone. "
+                "Keep replies to 1–3 sentences unless the user asks for more."
+            )
         payload = [
             {"role": "user",      "content": f"[Style for all your replies: {style_note}] Acknowledge briefly."},
             {"role": "assistant", "content": "Understood."},

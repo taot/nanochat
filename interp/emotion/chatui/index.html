@@ -85,7 +85,7 @@
     const [messages, setMessages] = React.useState(initialMessages);
     const [input, setInput] = React.useState("");
     const [replyEmotion, setReplyEmotion] = React.useState(
-      (init && init.replyEmotion) || emotions[emotions.length - 1]
+      (init && init.replyEmotion) || "None"
     );
     const [detecting, setDetecting] = React.useState(false);
     const [thinking, setThinking] = React.useState(false);
@@ -475,6 +475,7 @@
                         padding: "5px 26px 5px 10px", borderRadius: 6, fontSize: 12,
                         color: T.text, cursor: "pointer", fontFamily: F, fontWeight: 500,
                       }}>
+                      <option value="None">Reply: None</option>
                       {chat.EMOTIONS.map((e) => <option key={e} value={e}>Reply: {e}</option>)}
                     </select>
                     <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke={T.text} strokeWidth="1.6"
