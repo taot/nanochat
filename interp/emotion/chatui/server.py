@@ -207,8 +207,13 @@ class NanochatBackend(Backend):
         print("prompt_ids:", prompt_ids)
         print("decoded prompot: ", self.tokenizer.decode(prompt_ids))
 
-        vector = self.vectors.get(reply_emotion.lower())
+        # vector = self.vectors.get(reply_emotion.lower())
+        vector = self.vectors.get("happy")
+        vector2 = self.vectors.get("sad")
+
         print("vector:", vector)
+        print("vector2:", vector2)
+
         effective_strength = strength if strength is not None else self.strength
 
         print("effective_strength:", effective_strength)
@@ -220,34 +225,35 @@ class NanochatBackend(Backend):
             # print("prompt_ids2:", prompt_ids2)
             # print("decoded prompt2: ", self.tokenizer.decode(prompt_ids2))
 
-            return generate_steered(
-                self.model, self.tokenizer, prompt_ids,
-                gen_steps=self.gen_steps,
-                layer_idx=self.layer,
-                vector=vector,
-                strength=effective_strength,
-                positions="all",
-                temperature=0.8,
-            )
-
-            # ctx = (
-            #     steer_layer(self.model, self.layer, vector, effective_strength, positions="all")
-            #     if vector is not None
-            #     else nullcontext()
+            # return generate_steered(
+            #     self.model, self.tokenizer, prompt_ids,
+            #     gen_steps=self.gen_steps,
+            #     layer_idx=self.layer,
+            #     vector=vector,
+            #     strength=effective_strength,
+            #     positions="all",
+            #     temperature=0.8,
+            #     top_k=50,
             # )
-            # with ctx:
-            #     result_tokens = self.engine.generate_batch(
-            #         prompt_ids, num_samples=1, max_tokens=512, temperature=0.8, top_k=50,
-            #     )[0]
 
-            # print("result_tokens:", result_tokens)
-            # new_tokens = result_tokens[0][len(prompt_ids):]
+            ctx = (
+                steer_layer(self.model, self.layer, vector - vector2, effective_strength, positions="all")
+                if vector is not None
+                else nullcontext()
+            )
+            with ctx:
+                result_tokens = self.engine.generate_batch(
+                    prompt_ids, num_samples=1, max_tokens=512, temperature=2.0, top_k=50,
+                )[0]
 
-            # print("New tokens:", new_tokens)
-            # print("New text:", self.tokenizer.decode(new_tokens))
+            print("result_tokens:", result_tokens)
+            new_tokens = result_tokens[0][len(prompt_ids):]
 
-            # decoded = self.tokenizer.decode(new_tokens)
-            # return (assistant_prefix + decoded) if assistant_prefix else decoded
+            print("New tokens:", new_tokens)
+            print("New text:", self.tokenizer.decode(new_tokens))
+
+            decoded = self.tokenizer.decode(new_tokens)
+            return (assistant_prefix + decoded) if assistant_prefix else decoded
 
         else:
             ctx = (
@@ -356,7 +362,7 @@ def main():
                    help="Device type for nanochat: cuda|cpu|mps. Default: autodetect")
     p.add_argument("--gen-mode", choices=["engine", "model"], default="engine",
                    help="nanochat generation method: engine (batch+tools) or model (simple autoregressive)")
-    p.add_argument("--gen-steps", type=int, default=64,
+    p.add_argument("--gen-steps", type=int, default=512,
                    help="max tokens to generate in model mode (nanochat backend only)")
     args = p.parse_args()
 
