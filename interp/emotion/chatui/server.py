@@ -188,7 +188,7 @@ class NanochatBackend(Backend):
         if missing:
             raise ValueError(f"Probe file is missing configured emotions: {', '.join(missing)}")
         print(
-            f"[chatui2 nanochat] loaded {vectors_path}: "
+            f"[chatui nanochat] loaded {vectors_path}: "
             f"layer={self.layer}, emotions={self.probe_emotions}"
         )
 
@@ -374,14 +374,14 @@ def _build_backend(args: argparse.Namespace) -> Backend:
 
 
 def _env_cors_origins() -> list[str]:
-    raw = os.environ.get("CHATUI2_CORS_ORIGINS", "")
+    raw = os.environ.get("CHATUI_CORS_ORIGINS", "")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 def main() -> None:
     import uvicorn
 
-    parser = argparse.ArgumentParser(description="Emotion chatui2 API server.")
+    parser = argparse.ArgumentParser(description="Emotion chatui API server.")
     parser.add_argument("--backend", choices=["llm", "nanochat"], default="llm")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8001)

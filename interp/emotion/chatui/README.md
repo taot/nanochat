@@ -1,6 +1,6 @@
-# chatui2 运行说明
+# chatui 运行说明
 
-`chatui2` 是一个情绪检测和情绪引导回复的 Web UI。后端是 FastAPI，前端是 Vite + React。
+`chatui` 是一个情绪检测和情绪引导回复的 Web UI。后端是 FastAPI，前端是 Vite + React。
 
 ## 准备环境
 
@@ -19,7 +19,7 @@ source .venv/bin/activate
 
 ```bash
 export OPENROUTER_API_KEY=你的_key
-python interp/emotion/chatui2/start.py
+python interp/emotion/chatui/start.py
 ```
 
 启动后访问：
@@ -38,7 +38,7 @@ http://127.0.0.1:5173
 如果要使用本地 nanochat 模型和情绪向量，在 `start.py` 后通过 `--` 传递后端参数：
 
 ```bash
-python interp/emotion/chatui2/start.py -- --backend nanochat \
+python interp/emotion/chatui/start.py -- --backend nanochat \
     --vectors out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt \
     --source sft
 ```
@@ -59,13 +59,13 @@ python interp/emotion/chatui2/start.py -- --backend nanochat \
 终端 1，启动后端：
 
 ```bash
-python -m interp.emotion.chatui2.server --host 127.0.0.1 --port 8001
+python -m interp.emotion.chatui.server --host 127.0.0.1 --port 8001
 ```
 
 终端 2，启动前端：
 
 ```bash
-cd interp/emotion/chatui2/frontend
+cd interp/emotion/chatui/frontend
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```

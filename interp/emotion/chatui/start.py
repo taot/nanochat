@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the chatui2 FastAPI backend and Vite frontend together."""
+"""Start the chatui FastAPI backend and Vite frontend together."""
 
 from __future__ import annotations
 
@@ -24,15 +24,15 @@ HEALTHCHECK_INTERVAL_SECONDS = 0.5
 
 
 def _run_checked(command: list[str], cwd: Path) -> None:
-    print(f"[chatui2] running: {' '.join(command)}", flush=True)
+    print(f"[chatui] running: {' '.join(command)}", flush=True)
     subprocess.run(command, cwd=cwd, check=True)
 
 
 def _ensure_npm_ready() -> None:
     if shutil.which("npm") is None:
-        print("[chatui2] npm is required. Please install npm first.", file=sys.stderr)
+        print("[chatui] npm is required. Please install npm first.", file=sys.stderr)
         raise SystemExit(1)
-    print("[chatui2] installing frontend dependencies.", flush=True)
+    print("[chatui] installing frontend dependencies.", flush=True)
     _run_checked(["npm", "install"], FRONTEND_DIR)
 
 
@@ -58,7 +58,7 @@ def _backend_command(backend_args: list[str]) -> list[str]:
     return [
         sys.executable,
         "-m",
-        "interp.emotion.chatui2.server",
+        "interp.emotion.chatui.server",
         "--host",
         BACKEND_HOST,
         "--port",
@@ -85,7 +85,7 @@ def _frontend_command() -> list[str]:
 def _wait_for_backend_health(backend_process: subprocess.Popen[object]) -> None:
     url = f"http://{BACKEND_HOST}:{BACKEND_PORT}/api/health"
     deadline = time.monotonic() + HEALTHCHECK_TIMEOUT_SECONDS
-    print(f"[chatui2] waiting for backend healthcheck: {url}", flush=True)
+    print(f"[chatui] waiting for backend healthcheck: {url}", flush=True)
     while time.monotonic() < deadline:
         return_code = backend_process.poll()
         if return_code is not None:
@@ -93,7 +93,7 @@ def _wait_for_backend_health(backend_process: subprocess.Popen[object]) -> None:
         try:
             with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status == 200:
-                    print("[chatui2] backend healthcheck succeeded.", flush=True)
+                    print("[chatui] backend healthcheck succeeded.", flush=True)
                     return
         except (urllib.error.URLError, TimeoutError):
             pass
@@ -104,7 +104,7 @@ def _wait_for_backend_health(backend_process: subprocess.Popen[object]) -> None:
 def _start_processes(backend_args: list[str]) -> list[subprocess.Popen[object]]:
     backend_command = _backend_command(backend_args)
     frontend_command = _frontend_command()
-    print(f"[chatui2] backend: {' '.join(backend_command)}", flush=True)
+    print(f"[chatui] backend: {' '.join(backend_command)}", flush=True)
     backend_process = subprocess.Popen(backend_command, cwd=HERE.parents[2])
     try:
         _wait_for_backend_health(backend_process)
@@ -112,14 +112,14 @@ def _start_processes(backend_args: list[str]) -> list[subprocess.Popen[object]]:
         _terminate([backend_process])
         raise
 
-    print(f"[chatui2] frontend: {' '.join(frontend_command)}", flush=True)
+    print(f"[chatui] frontend: {' '.join(frontend_command)}", flush=True)
     frontend_process = subprocess.Popen(frontend_command, cwd=FRONTEND_DIR)
     return [backend_process, frontend_process]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Start chatui2 backend and frontend. Pass backend args after --."
+        description="Start chatui backend and frontend. Pass backend args after --."
     )
     parser.add_argument("backend_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -128,13 +128,13 @@ def main() -> None:
     try:
         _ensure_npm_ready()
     except subprocess.CalledProcessError as error:
-        print(f"[chatui2] npm install failed with code {error.returncode}.", file=sys.stderr)
+        print(f"[chatui] npm install failed with code {error.returncode}.", file=sys.stderr)
         raise SystemExit(error.returncode) from error
 
     try:
         processes = _start_processes(backend_args)
     except (RuntimeError, TimeoutError) as error:
-        print(f"[chatui2] {error}", file=sys.stderr)
+        print(f"[chatui] {error}", file=sys.stderr)
         raise SystemExit(1) from error
 
     try:
@@ -142,12 +142,12 @@ def main() -> None:
             for process in processes:
                 return_code = process.poll()
                 if return_code is not None:
-                    print(f"[chatui2] process exited with code {return_code}; stopping.", flush=True)
+                    print(f"[chatui] process exited with code {return_code}; stopping.", flush=True)
                     _terminate(processes)
                     raise SystemExit(return_code)
             time.sleep(0.5)
     except KeyboardInterrupt:
-        print("\n[chatui2] stopping.", flush=True)
+        print("\n[chatui] stopping.", flush=True)
         _terminate(processes)
 
 

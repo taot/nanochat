@@ -1,8 +1,8 @@
-# Emotion Chat UI 2 Server Design
+# Emotion Chat UI Server Design
 
 ## Goals
 
-`chatui2` server provides a pure FastAPI API backend for emotion detection and steered reply generation.
+`chatui` server provides a pure FastAPI API backend for emotion detection and steered reply generation.
 
 The backend has two responsibilities:
 
@@ -332,11 +332,11 @@ The reply is decoded from only the newly generated tokens. If `assistant_prefix`
 Expected commands:
 
 ```bash
-python -m interp.emotion.chatui2.server --backend llm --port 8001
+python -m interp.emotion.chatui.server --backend llm --port 8001
 ```
 
 ```bash
-python -m interp.emotion.chatui2.server \
+python -m interp.emotion.chatui.server \
     --backend nanochat \
     --vectors out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt \
     --port 8001
@@ -357,7 +357,7 @@ Nanochat-specific CLI options:
 Backend implementation should be checked with:
 
 ```bash
-python -m py_compile interp/emotion/chatui2/server.py
+python -m py_compile interp/emotion/chatui/server.py
 ```
 
 Manual smoke test:
