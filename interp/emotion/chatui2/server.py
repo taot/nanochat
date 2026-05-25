@@ -32,6 +32,11 @@ class ConfigResponse(BaseModel):
     backend: str
 
 
+class HealthResponse(BaseModel):
+    ok: bool
+    backend: str
+
+
 class DetectResponse(BaseModel):
     emotion: str
     confidence: float
@@ -317,6 +322,13 @@ def _validate_steering(request: ChatRequest) -> None:
 @app.get("/api/config", response_model=ConfigResponse)
 def config() -> ConfigResponse:
     return ConfigResponse(emotions=EMOTIONS, backend=backend_name)
+
+
+@app.get("/api/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    if backend is None:
+        raise HTTPException(503, "backend is not ready")
+    return HealthResponse(ok=backend is not None, backend=backend_name)
 
 
 @app.post("/api/detect", response_model=DetectResponse)

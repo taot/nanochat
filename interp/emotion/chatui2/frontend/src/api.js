@@ -1,53 +1,70 @@
-const EMOTIONS = ["Happy", "Sad", "Angry", "Calm"];
+function titleCase(value) {
+  return value ? `${value[0].toUpperCase()}${value.slice(1).toLowerCase()}` : value;
+}
 
-const KEYWORDS = {
-  Happy: ["happy", "hopeful", "great", "thanks", "glad", "excited", "love"],
-  Sad: ["sad", "upset", "tired", "lonely", "sorry", "hurt", "down"],
-  Angry: ["angry", "frustrated", "deadline", "annoyed", "mad", "unfair", "blocked"],
-  Calm: ["breathe", "calm", "relax", "focus", "quiet", "steady", "peace"],
-};
+function normalizeDetection(result) {
+  return {
+    ...result,
+    emotion: titleCase(result.emotion),
+    scores: Object.fromEntries(Object.entries(result.scores || {}).map(([emotion, score]) => [titleCase(emotion), score])),
+  };
+}
 
-const REPLIES = {
-  None: "I hear you. Let's make this concrete: name the main issue, then choose one small next step.",
-  Happy: "That sounds encouraging. We can build on that momentum and turn it into something useful today.",
-  Sad: "I'm sorry this feels heavy. We can slow it down, sort through it, and find one manageable step.",
-  Angry: "That frustration makes sense. Let's separate what happened, what you need, and what response would help.",
-  Calm: "Let's keep this steady. Take a breath, then focus on the next useful move rather than the whole problem.",
-};
-
-function delay(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+async function request(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Request failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function getConfig() {
-  await delay(150);
-  return { emotions: EMOTIONS, strength: 2, backend: "mock" };
+  const config = await request("/api/config");
+  return { ...config, emotions: config.emotions.map(titleCase), strength: 2 };
 }
 
 export async function detectEmotion(text) {
-  await delay(400);
-  const lower = text.toLowerCase();
-  const raw = Object.fromEntries(
-    EMOTIONS.map((emotion) => [
-      emotion,
-      KEYWORDS[emotion].reduce((count, keyword) => count + (lower.includes(keyword) ? 1 : 0), 0),
-    ]),
-  );
-
-  if (Object.values(raw).every((count) => count === 0)) raw.Calm = 1;
-
-  const total = Object.values(raw).reduce((sum, count) => sum + count, 0);
-  const scores = Object.fromEntries(
-    EMOTIONS.map((emotion) => [emotion, Number(((raw[emotion] + 0.2) / (total + 0.8)).toFixed(2))]),
-  );
-  const emotion = EMOTIONS.reduce((best, current) => (scores[current] > scores[best] ? current : best), EMOTIONS[0]);
-
-  return { emotion, confidence: scores[emotion], scores };
+  const result = await request("/api/detect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  return normalizeDetection(result);
 }
 
-export async function generateReply({ replyEmotion, assistantPrefix }) {
-  await delay(750);
-  const mode = REPLIES[replyEmotion] ? replyEmotion : "None";
-  const prefix = assistantPrefix.trim() ? `${assistantPrefix.trim()} ` : "";
-  return `${prefix}${REPLIES[mode]}`;
+export async function generateReply({
+  messages,
+  replyEmotion,
+  strength,
+  steeringItems,
+  temperature,
+  topK,
+  maxTokens,
+  position,
+  assistantPrefix,
+}) {
+  const emotions = [...steeringItems];
+  if (replyEmotion !== "None") {
+    emotions.push({ emotion: replyEmotion, strength });
+  }
+  const result = await request("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      steering: {
+        emotions: emotions.map((item) => ({
+          emotion: item.emotion.toLowerCase(),
+          strength: item.strength,
+        })),
+        position,
+      },
+      temperature,
+      top_k: topK,
+      max_tokens: maxTokens,
+      assistant_prefix: assistantPrefix.trim() || null,
+    }),
+  });
+  return result.reply;
 }
