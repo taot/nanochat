@@ -1,41 +1,41 @@
-# chatui 运行说明
+# chatui Usage Guide
 
-`chatui` 是一个情绪检测和情绪引导回复的 Web UI。后端是 FastAPI，前端是 Vite + React。
+`chatui` is a Web UI for emotion detection and emotion-guided responses. The backend uses FastAPI, and the frontend uses Vite + React.
 
-## 准备环境
+## Setup
 
-在仓库根目录安装 Python 依赖：
+Install the Python dependencies from the repository root:
 
 ```bash
 uv sync
 source .venv/bin/activate
 ```
 
-前端需要本机已安装 `npm`。一键启动脚本会自动在 `frontend/` 下执行 `npm install`。
+The frontend requires `npm` to be installed locally. The one-command startup script automatically runs `npm install` under `frontend/`.
 
-## 一键启动
+## One-Command Startup
 
-默认后端使用 OpenRouter LLM，需要先设置 API key：
+By default, the backend uses the OpenRouter LLM, so you need to set the API key first:
 
 ```bash
-export OPENROUTER_API_KEY=你的_key
+export OPENROUTER_API_KEY=your_key
 python interp/emotion/chatui/start.py
 ```
 
-启动后访问：
+After startup, open:
 
 ```text
 http://127.0.0.1:5173
 ```
 
-默认端口：
+Default ports:
 
-- 后端 API: `http://127.0.0.1:8001`
-- 前端页面: `http://127.0.0.1:5173`
+- Backend API: `http://127.0.0.1:8001`
+- Frontend page: `http://127.0.0.1:5173`
 
-## 使用 nanochat 后端
+## Using the nanochat Backend
 
-如果要使用本地 nanochat 模型和情绪向量，在 `start.py` 后通过 `--` 传递后端参数：
+To use a local nanochat model and emotion vectors, pass backend arguments after `start.py` with `--`:
 
 ```bash
 python interp/emotion/chatui/start.py -- --backend nanochat \
@@ -43,26 +43,26 @@ python interp/emotion/chatui/start.py -- --backend nanochat \
     --source sft
 ```
 
-常用参数：
+Common arguments:
 
-- `--backend llm|nanochat`: 后端类型，默认 `llm`
-- `--vectors`: 情绪向量文件路径，默认 `out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt`
-- `--source base|sft|rl`: 加载的模型阶段，默认 `sft`
-- `--model-tag`: 指定模型 tag
-- `--step`: 指定 checkpoint step
-- `--device-type cuda|cpu|mps`: 指定运行设备
+- `--backend llm|nanochat`: Backend type. Defaults to `llm`.
+- `--vectors`: Path to the emotion vector file. Defaults to `out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt`.
+- `--source base|sft|rl`: Model stage to load. Defaults to `sft`.
+- `--model-tag`: Model tag to use.
+- `--step`: Checkpoint step to use.
+- `--device-type cuda|cpu|mps`: Runtime device to use.
 
-## 手动启动
+## Manual Startup
 
-也可以分别启动后端和前端。
+You can also start the backend and frontend separately.
 
-终端 1，启动后端：
+Terminal 1, start the backend:
 
 ```bash
 python -m interp.emotion.chatui.server --host 127.0.0.1 --port 8001
 ```
 
-终端 2，启动前端：
+Terminal 2, start the frontend:
 
 ```bash
 cd interp/emotion/chatui/frontend
@@ -70,8 +70,8 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-前端开发服务器会把 `/api` 请求代理到 `http://127.0.0.1:8001`。
+The frontend development server proxies `/api` requests to `http://127.0.0.1:8001`.
 
-## 停止服务
+## Stopping Services
 
-在运行 `start.py` 的终端按 `Ctrl+C`，脚本会同时停止后端和前端进程。
+Press `Ctrl+C` in the terminal running `start.py`. The script stops both the backend and frontend processes.

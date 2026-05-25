@@ -1,0 +1,3 @@
+- [ ] In the chatui, remove the unnecessary button beside the "Send" button.
+- [ ] Better logging on the start script and backend.
+- [ ] Check if all parameters are passed correctly.
