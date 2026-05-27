@@ -441,10 +441,6 @@ select {
   padding-right: 8px;
 }
 
-.strength-input {
-  width: 64px;
-}
-
 .send-button {
   border: 0;
   background: var(--text);

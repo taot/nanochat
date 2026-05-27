@@ -408,17 +408,6 @@ function Workspace() {
                 {chat.detecting ? "Analyzing..." : "Detect"}
               </button>
               <div className="spacer" />
-              {chat.backend !== "mock" && (
-                <input
-                  className="strength-input"
-                  type="number"
-                  value={chat.strength}
-                  onChange={(event) => chat.setStrength(Number(event.target.value))}
-                  step={0.1}
-                  min={0}
-                  title="Steering strength"
-                />
-              )}
               <button className="send-button" onClick={chat.send} disabled={!chat.input.trim() || chat.thinking}>Send</button>
             </div>
           </div>
