@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Pure FastAPI API server for emotion detection and steered replies."""
-
 import argparse
 import json
 import logging

@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Start the chatui FastAPI backend and Vite frontend together."""
-
 from __future__ import annotations
 
 import argparse
