@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
 from typing import Any, Literal
@@ -15,6 +16,7 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
 
 EMOTIONS = ["happy", "sad", "angry", "calm"]
+SERVER_SESSION_ID = str(uuid.uuid4())
 DETECT_MODEL = "anthropic/claude-haiku-4-5"
 REPLY_MODEL = "anthropic/claude-sonnet-4-5"
 DEFAULT_VECTORS = "out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt"
@@ -54,6 +56,7 @@ class DetectRequest(BaseModel):
 class ConfigResponse(BaseModel):
     emotions: list[str]
     backend: str
+    session_id: str
 
 
 class HealthResponse(BaseModel):
@@ -351,7 +354,7 @@ def _validate_steering(request: ChatRequest) -> None:
 
 @app.get("/api/config", response_model=ConfigResponse)
 def config() -> ConfigResponse:
-    return ConfigResponse(emotions=EMOTIONS, backend=backend_name)
+    return ConfigResponse(emotions=EMOTIONS, backend=backend_name, session_id=SERVER_SESSION_ID)
 
 
 @app.get("/api/health", response_model=HealthResponse)

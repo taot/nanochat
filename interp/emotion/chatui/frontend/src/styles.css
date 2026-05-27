@@ -133,8 +133,22 @@ button:disabled {
   background: var(--bg);
 }
 
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+
 .conversation-card {
+  position: relative;
   padding: 8px 10px;
+  cursor: pointer;
+}
+
+.conversation-card.active {
+  background: var(--border);
 }
 
 .conversation-name {
@@ -623,6 +637,24 @@ select {
   color: var(--muted-soft);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.delete-conv {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-soft);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.conversation-card:hover .delete-conv {
+  display: block;
 }
 
 @keyframes pulse {

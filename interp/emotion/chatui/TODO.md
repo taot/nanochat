@@ -1,5 +1,5 @@
 - [x] In the chatui, remove the unnecessary strength input beside the "Send" button.
 - [x] Better logging on the start script and backend.
-- [ ] Check if all parameters are passed correctly.
-- [ ] Enhance error handling on server and UI side.
-- [ ] Chat history on the left panel in UI.
+- [x] Check if all parameters are passed correctly.
+- [x] Enhance error handling on server and UI side.
+- [x] Chat history on the left panel in UI.

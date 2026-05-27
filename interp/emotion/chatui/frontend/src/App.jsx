@@ -8,6 +8,27 @@ const PROMPTS = [
   "Walk me through a breathing exercise.",
 ];
 
+// --- Persistence helpers ---
+const CONV_KEY = "nanochat_conversations";
+const SID_KEY = "nanochat_server_session_id";
+
+function loadAllConversations() {
+  try { return JSON.parse(localStorage.getItem(CONV_KEY) || "[]"); }
+  catch { return []; }
+}
+function persistConversation(conv) {
+  const all = loadAllConversations();
+  const idx = all.findIndex((c) => c.id === conv.id);
+  if (idx >= 0) all[idx] = conv; else all.unshift(conv);
+  localStorage.setItem(CONV_KEY, JSON.stringify(all));
+}
+function eraseConversation(id) {
+  localStorage.setItem(CONV_KEY, JSON.stringify(loadAllConversations().filter((c) => c.id !== id)));
+}
+function clearAllConversations() {
+  localStorage.removeItem(CONV_KEY);
+}
+
 function useChat() {
   const [emotions, setEmotions] = useState(["Happy", "Sad", "Angry", "Calm"]);
   const [messages, setMessages] = useState([]);
@@ -24,6 +45,8 @@ function useChat() {
   const [detecting, setDetecting] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [lastDetection, setLastDetection] = useState(null);
+  const [activeId, setActiveId] = useState(() => crypto.randomUUID());
+  const [conversations, setConversations] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,10 +55,23 @@ function useChat() {
       if (Array.isArray(config.emotions) && config.emotions.length) setEmotions(config.emotions);
       if (typeof config.strength === "number") setStrength(config.strength);
       if (config.backend) setBackend(config.backend);
+
+      if (config.session_id) {
+        const storedSid = localStorage.getItem(SID_KEY);
+        if (config.session_id !== storedSid) {
+          clearAllConversations();
+          localStorage.setItem(SID_KEY, config.session_id);
+        } else {
+          const all = loadAllConversations();
+          if (all.length > 0) {
+            setConversations(all);
+            setMessages(all[0].messages);
+            setActiveId(all[0].id);
+          }
+        }
+      }
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const detect = useCallback(async () => {
@@ -81,20 +117,69 @@ function useChat() {
         assistantPrefix,
       });
       await detection;
-      setMessages((previous) => [
-        ...previous,
-        { id: `${Date.now()}-a`, role: "assistant", content: reply, replyEmotion },
-      ]);
+      const assistantMsg = { id: `${Date.now()}-a`, role: "assistant", content: reply, replyEmotion };
+      setMessages((previous) => {
+        const next = [...previous, assistantMsg];
+        persistConversation({ id: activeId, title: text.slice(0, 28), messages: next, updatedAt: Date.now() });
+        setConversations(loadAllConversations());
+        return next;
+      });
     } finally {
       setThinking(false);
     }
-  }, [assistantPrefix, input, maxTokens, messages, position, replyEmotion, steeringItems, strength, temperature, thinking, topK]);
+  }, [assistantPrefix, input, maxTokens, messages, position, replyEmotion, steeringItems, strength, temperature, thinking, topK, activeId]);
 
-  const clear = useCallback(() => {
+  const newConversation = useCallback(() => {
+    if (messages.length > 0) {
+      const userMsg = messages.find((m) => m.role === "user");
+      persistConversation({
+        id: activeId,
+        title: userMsg?.content?.slice(0, 28) || "Untitled session",
+        messages,
+        updatedAt: Date.now(),
+      });
+      setConversations(loadAllConversations());
+    }
+    setActiveId(crypto.randomUUID());
     setMessages([]);
-    setLastDetection(null);
     setInput("");
-  }, []);
+    setLastDetection(null);
+  }, [activeId, messages]);
+
+  const loadConversation = useCallback((id) => {
+    if (messages.length > 0) {
+      const userMsg = messages.find((m) => m.role === "user");
+      persistConversation({
+        id: activeId,
+        title: userMsg?.content?.slice(0, 28) || "Untitled session",
+        messages,
+        updatedAt: Date.now(),
+      });
+      setConversations(loadAllConversations());
+    }
+    const conv = loadAllConversations().find((c) => c.id === id);
+    if (conv) {
+      setMessages(conv.messages);
+      setActiveId(conv.id);
+      setLastDetection(null);
+    }
+  }, [activeId, messages]);
+
+  const deleteConversation = useCallback((id) => {
+    eraseConversation(id);
+    const remaining = loadAllConversations();
+    setConversations(remaining);
+    if (id === activeId) {
+      if (remaining.length > 0) {
+        setMessages(remaining[0].messages);
+        setActiveId(remaining[0].id);
+      } else {
+        setMessages([]);
+        setActiveId(crypto.randomUUID());
+        setLastDetection(null);
+      }
+    }
+  }, [activeId]);
 
   return {
     emotions,
@@ -123,21 +208,38 @@ function useChat() {
     lastDetection,
     detect,
     send,
-    clear,
+    activeId,
+    conversations,
+    newConversation,
+    loadConversation,
+    deleteConversation,
   };
 }
 
 function LeftRail({ chat }) {
-  const userMessages = chat.messages.filter((message) => message.role === "user");
   return (
     <aside className="left-rail">
       <div className="rail-title-row">
         <div className="section-title">Conversations</div>
-        <button className="new-chat" onClick={chat.clear} title="New chat">+</button>
+        <button className="new-chat" onClick={chat.newConversation} title="New chat">+</button>
       </div>
-      <div className="conversation-card">
-        <div className="conversation-name">{userMessages[0]?.content?.slice(0, 28) || "Untitled session"}</div>
-        <div className="conversation-meta">{userMessages.length} message{userMessages.length === 1 ? "" : "s"}</div>
+      <div className="conversation-list">
+        {chat.conversations.map((conv) => (
+          <div
+            key={conv.id}
+            className={`conversation-card${conv.id === chat.activeId ? " active" : ""}`}
+            onClick={() => chat.loadConversation(conv.id)}
+          >
+            <div className="conversation-name">{conv.title}</div>
+            <div className="conversation-meta">
+              {conv.messages.filter((m) => m.role === "user").length} messages
+            </div>
+            <button
+              className="delete-conv"
+              onClick={(e) => { e.stopPropagation(); chat.deleteConversation(conv.id); }}
+            >×</button>
+          </div>
+        ))}
       </div>
     </aside>
   );
