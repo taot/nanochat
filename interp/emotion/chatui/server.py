@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import logging
 import os
 import re
 from abc import ABC, abstractmethod
@@ -12,13 +13,39 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
 
 EMOTIONS = ["happy", "sad", "angry", "calm"]
 DETECT_MODEL = "anthropic/claude-haiku-4-5"
 REPLY_MODEL = "anthropic/claude-sonnet-4-5"
 DEFAULT_VECTORS = "out/emotion_probes_layer_12_skiptokens_20_maxlen_256/vectors.pt"
 
+logging.basicConfig(
+    level=os.environ.get("CHATUI_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("chatui.server")
+
+class _ApiLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
+        body = await request.body()
+        if body:
+            logger.info("[%s] request: %s", request.url.path, body.decode())
+
+        response = await call_next(request)
+
+        chunks = [chunk async for chunk in response.body_iterator]
+        body = b"".join(chunks)
+        if body:
+            logger.info("[%s] response: %s", request.url.path, body.decode())
+        headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+        return StarletteResponse(body, status_code=response.status_code, headers=headers, media_type=response.media_type)
+
+
 app = FastAPI()
+app.add_middleware(_ApiLoggingMiddleware)
 backend: "Backend | None" = None
 backend_name = "llm"
 
@@ -91,6 +118,7 @@ class LLMBackend(Backend):
         )
         self.detect_model = detect_model
         self.reply_model = reply_model
+        logger.info("LLMBackend initialized: detect_model=%s reply_model=%s", detect_model, reply_model)
 
     def detect(self, text: str) -> DetectResponse:
         labels = ", ".join(EMOTIONS)
@@ -117,6 +145,7 @@ class LLMBackend(Backend):
             }
             return _detect_response(_normalize_scores(scores))
         except Exception:
+            logger.exception("detect failed for text=%r, returning default scores", text)
             return _detect_response(_default_scores())
 
     def chat(self, request: ChatRequest) -> ChatResponse:
@@ -187,9 +216,9 @@ class NanochatBackend(Backend):
         missing = [emotion for emotion in EMOTIONS if emotion not in self.vectors]
         if missing:
             raise ValueError(f"Probe file is missing configured emotions: {', '.join(missing)}")
-        print(
-            f"[chatui nanochat] loaded {vectors_path}: "
-            f"layer={self.layer}, emotions={self.probe_emotions}"
+        logger.info(
+            "NanochatBackend loaded %s: layer=%s emotions=%s",
+            vectors_path, self.layer, self.probe_emotions,
         )
 
     def detect(self, text: str) -> DetectResponse:
@@ -221,6 +250,10 @@ class NanochatBackend(Backend):
         with torch.inference_mode():
             prompt_ids = self._render_chat_prompt(request.messages, request.assistant_prefix)
             steering_vector = self._build_steering_vector(request.steering.emotions)
+            logger.debug(
+                "chat: steering=%s temperature=%s top_k=%s max_tokens=%s",
+                request.steering.model_dump(), request.temperature, request.top_k, request.max_tokens,
+            )
             ctx = (
                 self.steer_layer(
                     self.model,
@@ -393,6 +426,7 @@ def main() -> None:
     parser.add_argument("--device-type", choices=["cuda", "cpu", "mps"], default=None)
     args = parser.parse_args()
 
+    logger.info("args: %s", vars(args))
     globals()["backend"] = _build_backend(args)
     _configure_cors([*args.cors_origin, *_env_cors_origins()])
     uvicorn.run(app, host=args.host, port=args.port)

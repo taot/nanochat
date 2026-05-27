@@ -75,3 +75,13 @@ The frontend development server proxies `/api` requests to `http://127.0.0.1:800
 ## Stopping Services
 
 Press `Ctrl+C` in the terminal running `start.py`. The script stops both the backend and frontend processes.
+
+## Log Verbosity
+
+Both `start.py` and `server.py` read the `CHATUI_LOG_LEVEL` environment variable to set the log level. The default is `INFO`.
+
+Set it to `DEBUG` to see verbose output including full command arguments, healthcheck retry counts, steering parameters, and generation settings:
+
+```bash
+CHATUI_LOG_LEVEL=DEBUG python interp/emotion/chatui/start.py
+```
